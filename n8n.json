@@ -1,0 +1,169 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "cronExpression": "*/1 * * * *"
+      },
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "query": "from:*, is:unread webinar OR \"LinkedIn Live\" OR \"Zoom event\" OR invite",
+        "markAsRead": true,
+        "limit": 10
+      },
+      "name": "Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "gmailOAuth2": "Your Gmail OAuth2"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "[Paste Parse Email Function Code Here]"
+      },
+      "name": "Parse Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "[Paste Check Duplicates Function Code Here]"
+      },
+      "name": "Check Duplicates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "calendar": "primary",
+        "summary": "={{ $node[\"Parse Email\"].json.title }}",
+        "startDateTime": "={{ $node[\"Parse Email\"].json.dateTime }}",
+        "endDateTime": "={{ new Date(new Date($node[\"Parse Email\"].json.dateTime).getTime() + 60*60*1000).toISOString() }}",
+        "description": "Join Link: {{ $node[\"Parse Email\"].json.link }}",
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        }
+      },
+      "name": "Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": {
+        "googleCalendarOAuth2": "Your Google Calendar OAuth2"
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "[Your Chat ID]",
+        "text": "📅 *{{ $node[\"Parse Email\"].json.title }}*\n⏰ {{ $node[\"Parse Email\"].json.dateTime }}\n🔗 {{ $node[\"Parse Email\"].json.link }}\n🧠 {{ $node[\"Parse Email\"].json.platform }}",
+        "replyMarkup": "inlineKeyboard",
+        "buttons": [
+          {
+            "text": "Snooze 1h",
+            "callbackData": "snooze_1h"
+          }
+        ]
+      },
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": {
+        "telegramApi": "Your Telegram Bot Token"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $node[\"Parse Email\"].json.link === null || $node[\"Parse Email\"].json.dateTime === null }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "[Your Chat ID]",
+        "text": "⚠️ Failed to parse webinar details for email ID {{ $node[\"Gmail\"].json.id }}. Check manually."
+      },
+      "name": "Telegram Fallback",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 600],
+      "credentials": {
+        "telegramApi": "Your Telegram Bot Token"
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[Your Logging Endpoint]",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "log",
+              "value": "={{ JSON.stringify($node[\"Parse Email\"].json) }}"
+            }
+          ]
+        }
+      },
+      "name": "Log Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1120, 600]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [[{ "node": "Gmail", "type": "main", "index": 0 }]]
+    },
+    "Gmail": {
+      "main": [[{ "node": "Parse Email", "type": "main", "index": 0 }]]
+    },
+    "Parse Email": {
+      "main": [
+        [{ "node": "Check Duplicates", "type": "main", "index": 0 }],
+        [{ "node": "Switch", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Duplicates": {
+      "main": [[{ "node": "Google Calendar", "type": "main", "index": 0 }]]
+    },
+    "Google Calendar": {
+      "main": [[{ "node": "Telegram", "type": "main", "index": 0 }]]
+    },
+    "Switch": {
+      "main": [
+        [{ "node": "Telegram Fallback", "type": "main", "index": 0 }],
+        [{ "node": "Check Duplicates", "type": "main", "index": 0 }]
+      ]
+    },
+    "Telegram Fallback": {
+      "main": [[{ "node": "Log Error", "type": "main", "index": 0 }]]
+    }
+  }
+}
